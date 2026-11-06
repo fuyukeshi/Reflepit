@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reflepit</title>
+  <!-- HTML2Canvas ライブラリ (画面キャプチャ用) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #f4f6f9;
+      --card-bg: #ffffff;
+      --primary: #4a90e2;
+      --success: #2ecc71;
+      --warning: #f39c12;
+      --danger: #e74c3c;
+      --text: #333333;
+      --text-muted: #666666;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+
+    .container { background: var(--card-bg); width: 100%; max-width: 600px; padding: 25px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); text-align: center; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    h1 { font-size: 1.5rem; margin-bottom: 20px; color: var(--text); }
+    h2 { font-size: 1.2rem; margin-bottom: 15px; color: var(--text-muted); }
+
+    .btn { display: block; width: 100%; padding: 12px; margin: 8px 0; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-success { background: var(--success); color: white; }
+    .btn-warning { background: var(--warning); color: white; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-outline { background: transparent; border: 2px solid var(--primary); color: var(--primary); }
+
+    /* タイマー UI */
+    .timer-display { font-size: 3.5rem; font-weight: bold; margin: 15px 0; color: var(--primary); font-family: monospace; }
+    .timer-mode { font-size: 1.1rem; font-weight: bold; color: var(--success); margin-bottom: 5px; }
+    .pomo-count { font-size: 1.1rem; margin-bottom: 20px; color: var(--text-muted); }
+
+    /* グリッドボタン */
+    .grid-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+
+    /* ガイドメッセージ */
+    .guide-box { background: #eef5fc; padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 0.95rem; text-align: left; line-height: 1.4; color: #2c3e50; }
+
+    /* レポート UI */
+    .report-card { background: #ffffff; border: 1px solid #e9ecef; border-radius: 12px; padding: 18px; text-align: left; margin: 15px 0; }
+    .report-item { margin-bottom: 12px; }
+    .report-item label { font-size: 0.8rem; color: var(--text-muted); display: block; font-weight: bold; }
+    .report-item span { font-size: 1.05rem; font-weight: bold; }
+
+    /* 表形式デザイン */
+    .report-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.8rem; }
+    .report-table th, .report-table td { border: 1px solid #dee2e6; padding: 6px; text-align: left; }
+    .report-table th { background-color: #f1f3f5; color: #495057; font-weight: bold; }
+
+    input[type="text"], select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; margin: 4px 0 12px 0; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- 1. スタート画面 -->
+  <div id="start-screen" class="screen active">
+    <h1>Reflepit</h1>
+    <p style="color: var(--text-muted); margin-bottom: 30px;">作業進捗の記録と内省</p>
+    <button class="btn btn-primary" onclick="startWork()">作業を開始する</button>
+  </div>
+
+  <!-- 2. 作業中画面 -->
+  <div id="work-screen" class="screen">
+    <div class="timer-mode" id="timer-mode-label">作業中</div>
+    <div class="timer-display" id="timer">25:00</div>
+    <div class="pomo-count">達成ポモドーロ: <span id="pomo-num" style="font-weight:bold; color:var(--primary);">0</span> 周</div>
+    <!-- 追加：フェードイン・アウトする一時通知ガイド -->
+    <div id="phase-guide-toast" style="display:none; background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 10px 15px; border-radius: 8px; margin: 15px 0; font-size: 0.95rem; font-weight: bold; transition: opacity 0.5s;"></div>
+    
+    <button class="btn btn-warning" onclick="goToRestScreen()">休憩する</button>
+    <button class="btn btn-danger" onclick="goToReflectScreen()">作業できてない</button>
+    <button class="btn btn-outline" style="margin-top: 20px;" onclick="finishWork()">今回の作業を終了</button>
+  </div>
+
+  <!-- 3. 休憩選択画面 -->
+  <div id="rest-screen" class="screen">
+    <h2>休憩モード</h2>
+    <p style="margin-bottom: 12px; color: var(--text-muted);">どう過ごす？</p>
+    
+    <div class="grid-btns">
+      <button class="btn btn-outline" onclick="selectRest('しっかり休憩')">しっかり休む</button>
+      <button class="btn btn-outline" onclick="selectRest('ご飯')">ご飯を食べる</button>
+      <button class="btn btn-outline" onclick="selectRest('散歩')">散歩する</button>
+      <button class="btn btn-outline" onclick="selectRest('運動')">運動する</button>
+    </div>
+    <button class="btn btn-outline" onclick="selectRest('ちょい休み')">ちょっとだけ休みたい</button>
+
+    <div id="rest-guide" class="guide-box" style="display:none;"></div>
+    
+    <!-- 手動で次に進むためのボタン -->
+    <button id="btn-next-action" class="btn btn-primary" style="display:none; margin-top:10px;" onclick="proceedFromRest()">次に進む</button>
+  </div>
+
+  <!-- 3.5 休憩の振り返り画面（4つの主要休憩用） -->
+  <div id="rest-reflection-screen" class="screen">
+     <h2 id="reflection-title">休憩の振り返り</h2>
+     <p style="margin-bottom: 15px; color: var(--text-muted);">休憩前後の進捗を整理してから次に進もう</p>
+     
+    <div style="text-align: left;">
+      <label style="font-size:0.9rem; font-weight:bold;">休憩前に何ができたか？</label>
+      <input type="text" id="rest-before" placeholder="何のタスクがどこまで終わったか">
+
+      <label style="font-size:0.9rem; font-weight:bold;">休憩後何をするか？</label>
+      <input type="text" id="rest-after" placeholder="何のタスクをどこまでやるか>
+    </div>
+
+    <button class="btn btn-primary" onclick="saveRestReflection()">整理して作業に戻る</button>
+  </div>
+
+  <!-- 4. 内省画面 -->
+  <div id="reflect-screen" class="screen">
+    <h2>自問自答ノート</h2>
+    <p style="margin-bottom: 15px; color: var(--text-muted);">現状を書き出してタスクを刻むんだ</p>
+    
+    <div style="text-align: left;">
+      <label style="font-size:0.9rem; font-weight:bold;">1. 体調や今の状態は？</label>
+      <select id="reflect-physical" class="btn btn-outline" style="text-align:left; font-weight:normal; margin: 5px 0 15px 0;">
+        <option value="無問題">特になし（元気）</option>
+        <option value="不調">疲れがたまっている</option>
+        <option value="頭痛">頭痛がある</option>
+        <option value="眠い">眠気がある</option>
+        <option value="怠惰">なんかとにかくやりたくない</option>
+        <option value="感情">感情が落ち着いていない</option>
+        <option value="病気">病気で何もできない</option>
+        <option value="生理">生理で何もできない</option>
+      </select>
+
+      <label style="font-size:0.9rem; font-weight:bold;">2. 詰まっている・やりたくない理由は？</label>
+      <input type="text" id="reflect-reason" placeholder="例: 手順が分からない、集中が切れた">
+
+      <label style="font-size:0.9rem; font-weight:bold;">3. 今ならできそうな最小限のステップは？</label>
+      <input type="text" id="reflect-next" placeholder="例: ファイルを開いて薄目で確認する、5分だけ調べる">
+    </div>
+
+    <button class="btn btn-primary" onclick="saveReflection()">整理して作業を再開する</button>
+  </div>
+
+  <!-- 5. 終了レポート画面 -->
+  <div id="report-screen" class="screen">
+    <h2>今回の作業実績</h2>
+    
+    <!-- スクリーンショット対象領域 -->
+    <div class="report-card" id="report-capture-area">
+      <div class="report-item">
+        <label>作業時間帯</label>
+        <span id="rep-time-range">-</span>
+      </div>
+      <div class="report-item">
+        <label>合計作業時間</label>
+        <span id="rep-total-time">0分</span> （<span id="rep-pomo-count">0</span> ポモドーロ）
+      </div>
+
+      <!-- 休憩記録テーブル（前後確認込み） -->
+      <div class="report-item">
+        <label>休憩記録</label>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>時刻</th>
+              <th>方法</th>
+              <th>時間</th>
+              <th>休憩前できたこと</th>
+              <th>休憩後やること</th>
+            </tr>
+          </thead>
+          <tbody id="rep-rest-table-body"></tbody>
+        </table>
+      </div>
+
+      <!-- 内省メモテーブル -->
+      <div class="report-item">
+        <label>詰まり・内省メモ</label>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>時刻</th>
+              <th>状態</th>
+              <th>理由</th>
+              <th>次のステップ</th>
+            </tr>
+          </thead>
+          <tbody id="rep-reflect-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="shareX()">X (旧Twitter) に投稿する</button>
+    <button class="btn btn-outline" onclick="saveScreenshot()">画像として保存 (スクショ)</button>
+    <button class="btn btn-success" style="margin-top: 15px;" onclick="resetAll()">データを確認した (最初に戻る)</button>
+  </div>
+
+</div>
+
+<script>
+  let timerInterval = null;
+  let secondsLeft = 25 * 60;
+  let isBreakTime = false; // 現在が休憩中かどうか
+  let pomoCount = 0;
+  let startTime = null;
+  let endTime = null;
+
+  // ログ保持用配列
+  let restLogs = [];
+  let reflectionLogs = [];
+
+  // 休憩計測用一時変数
+  let currentRestStart = null;
+  let currentRestType = '';
+
+  let audioCtx = null;
+
+  // --- Web Audio API による電子音生成関数（自動再生ブロック対策込み） ---
+  function initAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }
+
+  function playBeep(type = 'normal') {
+    try {
+      initAudio();
+      
+      if (type === 'pomo_end') {
+        // ポモドーロ終了時の「ピピッ、ピピッ」音
+        playTone(audioCtx, 880, 0, 0.1);
+        playTone(audioCtx, 880, 0.15, 0.1);
+        playTone(audioCtx, 1174.66, 0.3, 0.2);
+      } else {
+        // 通常の決定・復帰音「ピッ」
+        playTone(audioCtx, 800, 0, 0.08);
+      }
+    } catch (e) {
+      console.log('Audio Context error', e);
+    }
+  }
+
+  function playTone(ctx, freq, startTimeOffset, duration) {
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+
+    gainNode.gain.setValueAtTime(0.15, ctx.currentTime + startTimeOffset);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTimeOffset + duration);
+
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    osc.start(ctx.currentTime + startTimeOffset);
+    osc.stop(ctx.currentTime + startTimeOffset + duration);
+  }
+
+  // 日付と時刻を取得する関数（例: "11/05 14:00"）
+  function getDateTimeStr(date = new Date()) {
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const d = date.getDate().toString().padStart(2, '0');
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `${m}/${d} ${time}`;
+  }
+  
+  // 時刻のみを取得する関数（例: "14:00"）
+  function getTimeStr(date = new Date()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function showScreen(id) {
+    if (id !== 'work-screen') {
+      stopTimer();
+    }
+    
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function startWork() {
+    initAudio(); // ユーザー操作の瞬間に音をアンロック
+    startTime = new Date();
+    playBeep('normal');
+    showScreen('work-screen');
+    runTimer();
+  }
+
+  let toastTimeout = null;
+
+  function runTimer() {
+    if (timerInterval) return;
+    timerInterval = setInterval(() => {
+      secondsLeft--;
+      updateTimerDisplay();
+      
+      if (secondsLeft <= 0) {
+        stopTimer();
+        playBeep('pomo_end');
+
+        if (!isBreakTime) {
+          // 作業フェーズ終了時
+          pomoCount++;
+          document.getElementById('pomo-num').innerText = pomoCount;
+          
+          // 5秒間のガイドを表示して自動で休憩モードへ切り替え
+          showPhaseToast('1ポモドーロ達成！ 5分間の休憩に入ります...', 5000, () => {
+            isBreakTime = true;
+            secondsLeft = 5 * 60; 
+            document.getElementById('timer-mode-label').innerText = "休憩中";
+            document.getElementById('timer-mode-label').style.color = "var(--warning)";
+            runTimer(); // 休憩タイマー自動スタート
+          });
+
+        } else {
+          // 休憩フェーズ終了時
+          // 5秒間のガイドを表示して自動で作業モードへ切り替え
+          showPhaseToast('休憩終了！ 次の作業フェーズを開始します...', 5000, () => {
+            isBreakTime = false;
+            secondsLeft = 25 * 60; 
+            document.getElementById('timer-mode-label').innerText = "作業中";
+            document.getElementById('timer-mode-label').style.color = "var(--success)";
+            runTimer(); // 作業タイマー自動スタート
+          });
+        }
+      }
+    }, 1000);
+  }
+
+  // 追加：指定秒数だけメッセージを表示してコールバックを実行する関数
+  function showPhaseToast(message, durationMs, callback) {
+    const toast = document.getElementById('phase-guide-toast');
+    toast.innerText = message;
+    toast.style.display = 'block';
+    toast.style.opacity = '1';
+
+    // 既存のタイマーがあればクリア
+    if (toastTimeout) clearTimeout(toastTimeout);
+
+    // 指定時間（5秒）後に非表示にして次の処理を実行
+    toastTimeout = setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => {
+        toast.style.display = 'none';
+        if (callback) callback();
+      }, 500); // フェードアウトのアニメーション待機
+    }, durationMs);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  function updateTimerDisplay() {
+    const m = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+    const s = (secondsLeft % 60).toString().padStart(2, '0');
+    document.getElementById('timer').innerText = `${m}:${s}`;
+  }
+
+  function goToRestScreen() {
+    playBeep('normal');
+    document.getElementById('rest-guide').style.display = 'none';
+    document.getElementById('btn-next-action').style.display = 'none';
+    showScreen('rest-screen');
+  }
+
+  function goToReflectScreen() {
+    playBeep('normal');
+    showScreen('reflect-screen');
+  }
+
+  function selectRest(type) {
+    currentRestStart = new Date();
+    currentRestType = type;
+    playBeep('normal');
+
+    const guideBox = document.getElementById('rest-guide');
+    const nextBtn = document.getElementById('btn-next-action');
+    
+    guideBox.style.display = 'block';
+    nextBtn.style.display = 'block';
+
+    const guides = {
+      'しっかり休憩': '切り替えて作業から一旦離れよう。',
+      'ご飯': 'エネルギー補給・水分補給を忘れずに',
+      '散歩': '今日の空模様は？行ってらっしゃい！',
+      '運動': '体を動かして血流を流そう',
+      'ちょい休み': 'お茶を用意したり、音楽を聴いたりしてみてね'
+    };
+    guideBox.innerText = guides[type] || '';
+  }
+
+  function proceedFromRest() {
+    playBeep('normal');
+    if (currentRestType === 'ちょい休み') {
+      if (currentRestStart) {
+        const now = new Date();
+        const restDuration = Math.max(1, Math.round((now - currentRestStart) / 1000 / 60));
+        restLogs.push({
+          time: getTimeStr(currentRestStart),
+          type: 'ちょい休み',
+          duration: `${restDuration}分`,
+          before: 'ちょい休み',
+          after: 'ちょい休み'
+        });
+        currentRestStart = null;
+        currentRestType = '';
+      }
+      document.getElementById('rest-guide').style.display = 'none';
+      document.getElementById('btn-next-action').style.display = 'none';
+      
+      showScreen('work-screen');
+      runTimer();
+    } else {
+      document.getElementById('reflection-title').innerText = `${currentRestType}の振り返り`;
+      showScreen('rest-reflection-screen');
+    }
+  }
+
+  function saveRestReflection() {
+    playBeep('normal');
+    const before = document.getElementById('rest-before').value;
+    const after = document.getElementById('rest-after').value;
+
+    if (currentRestStart) {
+      const now = new Date();
+      const restDuration = Math.max(1, Math.round((now - currentRestStart) / 1000 / 60));
+      
+      restLogs.push({
+        time: getTimeStr(currentRestStart),
+        type: currentRestType || '休憩',
+        duration: `${restDuration}分`,
+        before: before || '未入力',
+        after: after || '未入力'
+      });
+      currentRestStart = null;
+      currentRestType = '';
+    }
+
+    document.getElementById('rest-before').value = '';
+    document.getElementById('rest-after').value = '';
+    document.getElementById('rest-guide').style.display = 'none';
+    document.getElementById('btn-next-action').style.display = 'none';
+
+    showScreen('work-screen');
+    runTimer();
+  }
+
+  function saveReflection() {
+    playBeep('normal');
+    const physical = document.getElementById('reflect-physical').value;
+    const reason = document.getElementById('reflect-reason').value;
+    const next = document.getElementById('reflect-next').value;
+
+    reflectionLogs.push({
+      time: getTimeStr(),
+      physical: physical,
+      reason: reason || '未入力',
+      next: next || '未入力'
+    });
+    
+    document.getElementById('reflect-reason').value = '';
+    document.getElementById('reflect-next').value = '';
+    
+    showScreen('work-screen');
+    runTimer();
+  }
+
+  function finishWork() {
+    playBeep('normal');
+    endTime = new Date();
+    stopTimer();
+
+    const totalMinutes = Math.round((endTime - startTime) / 1000 / 60);
+    
+    // 【修正A】日付付きの時間帯文字列を作成 (例: "11/05 13:00 〜 11/05 14:15")
+    const startStr = getDateTimeStr(startTime);
+    const endStr = getDateTimeStr(endTime);
+    document.getElementById('rep-time-range').innerText = `${startStr} 〜 ${endStr}`;
+
+    // 【修正B】合計時間を「○時間○分」形式に変換
+    const hours = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    let timeFormatted = '';
+    if (hours > 0) {
+      timeFormatted = `${hours}時間 ${mins}分`;
+    } else {
+      timeFormatted = `${mins}分`;
+    }
+    document.getElementById('rep-total-time').innerText = timeFormatted;
+
+    document.getElementById('rep-pomo-count').innerText = pomoCount;
+
+    const restBody = document.getElementById('rep-rest-table-body');
+    restBody.innerHTML = '';
+    if (restLogs.length === 0) {
+      restBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#888;">なし</td></tr>';
+    } else {
+      restLogs.forEach(log => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${log.time}</td><td>${log.type}</td><td>${log.duration}</td><td>${log.before}</td><td>${log.after}</td>`;
+        restBody.appendChild(tr);
+      });
+    }
+
+    const reflectBody = document.getElementById('rep-reflect-table-body');
+    reflectBody.innerHTML = '';
+    if (reflectionLogs.length === 0) {
+      reflectBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888;">詰まりなし (順調)</td></tr>';
+    } else {
+      reflectionLogs.forEach(log => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${log.time}</td><td>${log.physical}</td><td>${log.reason}</td><td>${log.next}</td>`;
+        reflectBody.appendChild(tr);
+      });
+    }
+
+    showScreen('report-screen');
+  }
+
+  function shareX() {
+    const totalTimeStr = document.getElementById('rep-total-time').innerText;
+    const timeRange = document.getElementById('rep-time-range').innerText;
+    const restCount = restLogs.length;
+    const reflectCount = reflectionLogs.length;
+
+    const text = encodeURIComponent(
+      `【今回の作業実績】\n` +
+      `時間帯: ${timeRange}\n` +
+      `合計時間: ${totalTimeStr} (${pomoCount}ポモドーロ)\n` +
+      `休憩回数: ${restCount}回\n` +
+      `詰まった回数: ${reflectCount}回\n` +
+      `#作業記録 #Reflepit`
+    );
+    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+  }
+
+  function saveScreenshot() {
+    playBeep('normal');
+    const target = document.getElementById('report-capture-area');
+    html2canvas(target).then(canvas => {
+      const link = document.createElement('a');
+      link.download = `work-report-${new Date().toISOString().slice(0,10)}.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    });
+  }
+
+  function resetAll() {
+    playBeep('normal');
+    stopTimer();
+    secondsLeft = 25 * 60;
+    isBreakTime = false;
+    pomoCount = 0;
+    startTime = null;
+    endTime = null;
+    restLogs = [];
+    reflectionLogs = [];
+    currentRestStart = null;
+    currentRestType = '';
+
+    document.getElementById('pomo-num').innerText = '0';
+    document.getElementById('timer-mode-label').innerText = "作業中";
+    document.getElementById('timer-mode-label').style.color = "var(--success)";
+    updateTimerDisplay();
+    document.getElementById('rest-guide').style.display = 'none';
+    document.getElementById('btn-next-action').style.display = 'none';
+    showScreen('start-screen');
+  }
+</script>
+
+</body>
+</html>
